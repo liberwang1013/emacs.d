@@ -96,6 +96,7 @@
   (require 'init-sessions)
   (require 'init-git)
   (require 'init-markdown)
+<<<<<<< HEAD
   ;; (require 'init-erlang)
   ;; (require 'init-javascript)
   (require 'init-org)
@@ -103,6 +104,15 @@
   (require 'init-python-mode)
   ;; (require 'init-haskell)
   ;; (require 'init-ruby-mode)
+=======
+  (require 'init-erlang)
+  (require 'init-javascript)
+  (require 'init-org)
+  (require 'init-css)
+  (require 'init-python-mode)
+  (require 'init-haskell)
+  (require 'init-ruby-mode)
+>>>>>>> acbe84325044da75c93769246c1560e6b94ab2c2
   (require 'init-lisp)
   (require 'init-elisp)
   (require 'init-yasnippet)

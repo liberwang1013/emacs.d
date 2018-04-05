@@ -1,3 +1,8 @@
+request/
+.depend
+pyim/
+anaconda-mode/
+.wg-file.el
 /url/cache
 /.emacs.desktop
 /auto-save-list
@@ -6,9 +11,14 @@
 /session.*
 /custom.el
 *.elc
+company-statistics-cache.el
 CVS
 .svn
+*_flymake.el
 *~
+*.log
+.yas-compiled-snippets.el
+.bookmarks.el
 .cvsignore
 .*.lock
 /tramp
@@ -20,6 +30,7 @@ cookies
 /ac-comphist.dat
 \#*
 /elpa
+<<<<<<< HEAD
 /elpa-*
 site-lisp/package/
 /swank
@@ -48,3 +59,34 @@ site-lisp/package/
 /.historian
 /.uptimes.el
 /rake.cache
+=======
+eshell/
+semanticdb/
+*.swp
+*~
+abbrev_defs
+/swank
+/swank
+/.mc-lists.el
+TAGS
+GTAGS
+GPATH
+GRTAGS
+.emacs.d/emms/
+tutorial/
+/var
+org-clock-save.el
+.\#*
+emms/
+projectile-bookmarks.eld
+history
+recentf
+places
+ido.last
+projectile.cache
+.orig
+.unpacked
+srecode-map.el
+custom-set-variables.el
+.smex-items
+>>>>>>> acbe84325044da75c93769246c1560e6b94ab2c2
