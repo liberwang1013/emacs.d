@@ -1,264 +1,146 @@
-(require-package 'org-fstree)
-(when *is-a-mac*
-  (maybe-require-package 'grab-mac-link)
-  (require-package 'org-mac-iCal))
+;; some cool org tricks
+;; @see http://emacs.stackexchange.com/questions/13820/inline-verbatim-and-code-with-quotes-in-org-mode
 
-(maybe-require-package 'org-cliplink)
+;; {{ NO spell check for embedded snippets
+(defun org-mode-is-code-snippet ()
+  (let* (rlt
+         (begin-regexp "^[ \t]*#\\+begin_\\(src\\|html\\|latex\\|example\\)")
+         (end-regexp "^[ \t]*#\\+end_\\(src\\|html\\|latex\\|example\\)")
+         (case-fold-search t)
+         b e)
+    (save-excursion
+      (if (setq b (re-search-backward begin-regexp nil t))
+          (setq e (re-search-forward end-regexp nil t))))
+    (if (and b e (< (point) e)) (setq rlt t))
+    rlt))
 
-(define-key global-map (kbd "C-c l") 'org-store-link)
-(define-key global-map (kbd "C-c a") 'org-agenda)
+;; no spell check for property
+(defun org-mode-current-line-is-property ()
+  (string-match "^[ \t]+:[A-Z]+:[ \t]+" (my-line-str)))
+
+;; Please note flyspell only use ispell-word
+(defadvice org-mode-flyspell-verify (after org-mode-flyspell-verify-hack activate)
+  (let ((run-spellcheck ad-return-value))
+    (if ad-return-value
+      (cond
+       ((org-mode-is-code-snippet)
+        (setq run-spellcheck nil))
+       ((org-mode-current-line-is-property)
+        (setq run-spellcheck nil))))
+    (setq ad-return-value run-spellcheck)))
+;; }}
+
+;; Org v8 change log:
+;; @see http://orgmode.org/worg/org-8.0.html
+
+;; {{ export org-mode in Chinese into PDF
+;; @see http://freizl.github.io/posts/tech/2012-04-06-export-orgmode-file-in-Chinese.html
+;; and you need install texlive-xetex on different platforms
+;; To install texlive-xetex:
+;;    `sudo USE="cjk" emerge texlive-xetex` on Gentoo Linux
+(setq org-latex-to-pdf-process ;; org v7
+      '("xelatex -interaction nonstopmode -output-directory %o %f"
+        "xelatex -interaction nonstopmode -output-directory %o %f"
+        "xelatex -interaction nonstopmode -output-directory %o %f"))
+(setq org-latex-pdf-process org-latex-to-pdf-process) ;; org v8
+;; }}
+
+(defun my-setup-odt-org-convert-process ()
+  (interactive)
+  (let ((cmd "/Applications/LibreOffice.app/Contents/MacOS/soffice"))
+    (when (and *is-a-mac* (file-exists-p cmd))
+      ;; org v7
+      (setq org-export-odt-convert-processes '(("LibreOffice" "/Applications/LibreOffice.app/Contents/MacOS/soffice --headless --convert-to %f%x --outdir %d %i")))
+      ;; org v8
+      (setq org-odt-convert-processes '(("LibreOffice" "/Applications/LibreOffice.app/Contents/MacOS/soffice --headless --convert-to %f%x --outdir %d %i"))))
+    ))
+
+(my-setup-odt-org-convert-process)
+
+(defun narrow-to-region-indirect-buffer-maybe (start end use-indirect-buffer)
+  "Indirect buffer could multiple widen on same file."
+  (if (region-active-p) (deactivate-mark))
+  (if use-indirect-buffer
+      (with-current-buffer (clone-indirect-buffer
+                            (generate-new-buffer-name
+                             (concat (buffer-name) "-indirect-"
+                                     (number-to-string start) "-"
+                                     (number-to-string end)))
+                            'display)
+        (narrow-to-region start end)
+        (goto-char (point-min)))
+      (narrow-to-region start end)))
+
+;; @see https://gist.github.com/mwfogleman/95cc60c87a9323876c6c
+(defun narrow-or-widen-dwim (&optional use-indirect-buffer)
+  "If the buffer is narrowed, it widens.
+ Otherwise, it narrows to region, or Org subtree.
+If use-indirect-buffer is not nil, use `indirect-buffer' to hold the widen content."
+  (interactive "P")
+  (cond ((buffer-narrowed-p) (widen))
+        ((region-active-p)
+         (narrow-to-region-indirect-buffer-maybe (region-beginning)
+                                                 (region-end)
+                                                 use-indirect-buffer))
+        ((equal major-mode 'org-mode)
+         (org-narrow-to-subtree))
+        ((equal major-mode 'diff-mode)
+         (let* (b e)
+           (save-excursion
+             (setq b (diff-beginning-of-file))
+             (setq e (progn (diff-end-of-file) (point))))
+           (when (and b e (< b e))
+             (narrow-to-region-indirect-buffer-maybe b e use-indirect-buffer))))
+        (t (error "Please select a region to narrow to"))))
 
 ;; Various preferences
 (setq org-log-done t
+      org-completion-use-ido t
+      org-edit-src-content-indentation 0
       org-edit-timestamp-down-means-later t
-      org-archive-mark-done nil
-      org-hide-emphasis-markers t
-      org-catch-invisible-edits 'show
-      org-export-coding-system 'utf-8
+      org-agenda-start-on-weekday nil
+      org-agenda-span 14
+      org-agenda-include-diary t
+      org-agenda-window-setup 'current-window
       org-fast-tag-selection-single-key 'expert
-      org-html-validation-link nil
       org-export-kill-product-buffer-when-displayed t
-      org-tags-column 80)
+      ;; org v7
+      org-export-odt-preferred-output-format "doc"
+      ;; org v8
+      org-odt-preferred-output-format "doc"
+      org-tags-column 80
+      ;; org-startup-indented t
+      ;; {{ org 8.2.6 has some performance issue. Here is the workaround.
+      ;; @see http://punchagan.muse-amuse.in/posts/how-i-learnt-to-use-emacs-profiler.html
+      org-agenda-inhibit-startup t ;; ~50x speedup
+      org-agenda-use-tag-inheritance nil ;; 3-4x speedup
+      ;; }}
+      )
 
-
-;; Lots of stuff from http://doc.norang.ca/org-mode.html
-
-(defun sanityinc/grab-ditaa (url jar-name)
-  "Download URL and extract JAR-NAME as `org-ditaa-jar-path'."
-  ;; TODO: handle errors
-  (message "Grabbing " jar-name " for org.")
-  (let ((zip-temp (make-temp-name "emacs-ditaa")))
-    (unwind-protect
-        (progn
-          (when (executable-find "unzip")
-            (url-copy-file url zip-temp)
-            (shell-command (concat "unzip -p " (shell-quote-argument zip-temp)
-                                   " " (shell-quote-argument jar-name) " > "
-                                   (shell-quote-argument org-ditaa-jar-path)))))
-      (when (file-exists-p zip-temp)
-        (delete-file zip-temp)))))
-
-(after-load 'ob-ditaa
-  (unless (and (boundp 'org-ditaa-jar-path)
-               (file-exists-p org-ditaa-jar-path))
-    (let ((jar-name "ditaa0_9.jar")
-          (url "http://jaist.dl.sourceforge.net/project/ditaa/ditaa/0.9/ditaa0_9.zip"))
-      (setq org-ditaa-jar-path (expand-file-name jar-name (file-name-directory user-init-file)))
-      (unless (file-exists-p org-ditaa-jar-path)
-        (sanityinc/grab-ditaa url jar-name)))))
-
-
-
-(define-minor-mode prose-mode
-  "Set up a buffer for prose editing.
-This enables or modifies a number of settings so that the
-experience of editing prose is a little more like that of a
-typical word processor."
-  nil " Prose" nil
-  (if prose-mode
-      (progn
-        (setq truncate-lines nil)
-        (setq word-wrap t)
-        (setq cursor-type 'bar)
-        (when (eq major-mode 'org)
-          (kill-local-variable 'buffer-face-mode-face))
-        (buffer-face-mode 1)
-        ;;(delete-selection-mode 1)
-        (set (make-local-variable 'blink-cursor-interval) 0.6)
-        (set (make-local-variable 'show-trailing-whitespace) nil)
-        (flyspell-mode 1)
-        (visual-line-mode 1))
-    (kill-local-variable 'truncate-lines)
-    (kill-local-variable 'word-wrap)
-    (kill-local-variable 'cursor-type)
-    (kill-local-variable 'show-trailing-whitespace)
-    (buffer-face-mode -1)
-    ;; (delete-selection-mode -1)
-    (flyspell-mode -1)
-    (visual-line-mode -1)))
-
-;;(add-hook 'org-mode-hook 'buffer-face-mode)
-
-
-(setq org-support-shift-select t)
-
-;;; Capturing
-
-(global-set-key (kbd "C-c c") 'org-capture)
-
-(setq org-capture-templates
-      `(("t" "todo" entry (file "")  ; "" => org-default-notes-file
-         "* NEXT %?\n%U\n" :clock-resume t)
-        ("n" "note" entry (file "")
-         "* %? :NOTE:\n%U\n%a\n" :clock-resume t)
-        ))
-
-
-
-;;; Refiling
-
-(setq org-refile-use-cache nil)
-
-; Targets include this file and any file contributing to the agenda - up to 5 levels deep
-(setq org-refile-targets '((nil :maxlevel . 5) (org-agenda-files :maxlevel . 5)))
-
-(after-load 'org-agenda
-  (add-to-list 'org-agenda-after-show-hook 'org-show-entry))
-
-(defadvice org-refile (after sanityinc/save-all-after-refile activate)
-  "Save all org buffers after each refile operation."
-  (org-save-all-org-buffers))
-
-;; Exclude DONE state tasks from refile targets
-(defun sanityinc/verify-refile-target ()
-  "Exclude todo keywords with a done state from refile targets."
-  (not (member (nth 2 (org-heading-components)) org-done-keywords)))
-(setq org-refile-target-verify-function 'sanityinc/verify-refile-target)
-
-(defun sanityinc/org-refile-anywhere (&optional goto default-buffer rfloc msg)
-  "A version of `org-refile' which allows refiling to any subtree."
-  (interactive "P")
-  (let ((org-refile-target-verify-function))
-    (org-refile goto default-buffer rfloc msg)))
-
-(defun sanityinc/org-agenda-refile-anywhere (&optional goto rfloc no-update)
-  "A version of `org-agenda-refile' which allows refiling to any subtree."
-  (interactive "P")
-  (let ((org-refile-target-verify-function))
-    (org-agenda-refile goto rfloc no-update)))
-
+;; Refile targets include this file and any file contributing to the agenda - up to 5 levels deep
+(setq org-refile-targets (quote ((nil :maxlevel . 5) (org-agenda-files :maxlevel . 5))))
 ;; Targets start with the file name - allows creating level 1 tasks
-;;(setq org-refile-use-outline-path (quote file))
-(setq org-refile-use-outline-path t)
-(setq org-outline-path-complete-in-steps nil)
-
-;; Allow refile to create parent tasks with confirmation
-(setq org-refile-allow-creating-parent-nodes 'confirm)
-
-
-;;; To-do settings
+(setq org-refile-use-outline-path (quote file))
+;; Targets complete in steps so we start with filename, TAB shows the next level of targets etc
+(setq org-outline-path-complete-in-steps t)
 
 (setq org-todo-keywords
-      (quote ((sequence "TODO(t)" "NEXT(n)" "|" "DONE(d!/!)")
-              (sequence "PROJECT(p)" "|" "DONE(d!/!)" "CANCELLED(c@/!)")
-              (sequence "WAITING(w@/!)" "DELEGATED(e!)" "HOLD(h)" "|" "CANCELLED(c@/!)")))
-      org-todo-repeat-to-state "NEXT")
-
-(setq org-todo-keyword-faces
-      (quote (("NEXT" :inherit warning)
-              ("PROJECT" :inherit font-lock-string-face))))
+      (quote ((sequence "TODO(t)" "STARTED(s)" "|" "DONE(d!/!)")
+              (sequence "WAITING(w@/!)" "SOMEDAY(S)" "PROJECT(P@)" "|" "CANCELLED(c@/!)"))))
 
 
-
-;;; Agenda views
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
+;; Org clock
+;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;;
 
-(setq-default org-agenda-clockreport-parameter-plist '(:link t :maxlevel 3))
-
-
-(let ((active-project-match "-INBOX/PROJECT"))
-
-  (setq org-stuck-projects
-        `(,active-project-match ("NEXT")))
-
-  (setq org-agenda-compact-blocks t
-        org-agenda-sticky t
-        org-agenda-start-on-weekday nil
-        org-agenda-span 'day
-        org-agenda-include-diary nil
-        org-agenda-sorting-strategy
-        '((agenda habit-down time-up user-defined-up effort-up category-keep)
-          (todo category-up effort-up)
-          (tags category-up effort-up)
-          (search category-up))
-        org-agenda-window-setup 'current-window
-        org-agenda-custom-commands
-        `(("N" "Notes" tags "NOTE"
-           ((org-agenda-overriding-header "Notes")
-            (org-tags-match-list-sublevels t)))
-          ("g" "GTD"
-           ((agenda "" nil)
-            (tags "INBOX"
-                  ((org-agenda-overriding-header "Inbox")
-                   (org-tags-match-list-sublevels nil)))
-            (stuck ""
-                   ((org-agenda-overriding-header "Stuck Projects")
-                    (org-agenda-tags-todo-honor-ignore-options t)
-                    (org-tags-match-list-sublevels t)
-                    (org-agenda-todo-ignore-scheduled 'future)))
-            (tags-todo "-INBOX/NEXT"
-                       ((org-agenda-overriding-header "Next Actions")
-                        (org-agenda-tags-todo-honor-ignore-options t)
-                        (org-agenda-todo-ignore-scheduled 'future)
-                        ;; TODO: skip if a parent is WAITING or HOLD
-                        (org-tags-match-list-sublevels t)
-                        (org-agenda-sorting-strategy
-                         '(todo-state-down effort-up category-keep))))
-            (tags-todo ,active-project-match
-                       ((org-agenda-overriding-header "Projects")
-                        (org-tags-match-list-sublevels t)
-                        (org-agenda-sorting-strategy
-                         '(category-keep))))
-            (tags-todo "-INBOX/-NEXT"
-                       ((org-agenda-overriding-header "Orphaned Tasks")
-                        (org-agenda-tags-todo-honor-ignore-options t)
-                        (org-agenda-todo-ignore-scheduled 'future)
-                        ;; TODO: skip if a parent is a project
-                        (org-agenda-skip-function
-                         '(lambda ()
-                            (or (org-agenda-skip-subtree-if 'todo '("PROJECT" "HOLD" "WAITING" "DELEGATED"))
-                                (org-agenda-skip-subtree-if 'nottododo '("TODO")))))
-                        (org-tags-match-list-sublevels t)
-                        (org-agenda-sorting-strategy
-                         '(category-keep))))
-            (tags-todo "/WAITING"
-                       ((org-agenda-overriding-header "Waiting")
-                        (org-agenda-tags-todo-honor-ignore-options t)
-                        (org-agenda-todo-ignore-scheduled 'future)
-                        (org-agenda-sorting-strategy
-                         '(category-keep))))
-            (tags-todo "/DELEGATED"
-                       ((org-agenda-overriding-header "Delegated")
-                        (org-agenda-tags-todo-honor-ignore-options t)
-                        (org-agenda-todo-ignore-scheduled 'future)
-                        (org-agenda-sorting-strategy
-                         '(category-keep))))
-            (tags-todo "-INBOX/HOLD"
-                       ((org-agenda-overriding-header "On Hold")
-                        ;; TODO: skip if a parent is WAITING or HOLD
-                        (org-tags-match-list-sublevels nil)
-                        (org-agenda-sorting-strategy
-                         '(category-keep))))
-            ;; (tags-todo "-NEXT"
-            ;;            ((org-agenda-overriding-header "All other TODOs")
-            ;;             (org-match-list-sublevels t)))
-            )))))
-
-
-(add-hook 'org-agenda-mode-hook 'hl-line-mode)
-
-
-;;; Org clock
-
-;; Save the running clock and all clock history when exiting Emacs, load it on startup
-(after-load 'org
-  (org-clock-persistence-insinuate))
-(setq org-clock-persist t)
-(setq org-clock-in-resume t)
-
+;; Change task state to STARTED when clocking in
+(setq org-clock-in-switch-to-state "STARTED")
 ;; Save clock data and notes in the LOGBOOK drawer
 (setq org-clock-into-drawer t)
-;; Save state changes in the LOGBOOK drawer
-(setq org-log-into-drawer t)
 ;; Removes clocked tasks with 0:00 duration
 (setq org-clock-out-remove-zero-time-clocks t)
 
-;; Show clock sums as hours and minutes, not "n days" etc.
-(setq org-time-clocksum-format
-      '(:hours "%d" :require-hours t :minutes ":%02d" :require-minutes t))
-
-
-
-;;; Show the clocked-in task - if any - in the header line
+;; Show the clocked-in task - if any - in the header line
 (defun sanityinc/show-org-clock-in-header-line ()
   (setq-default header-line-format '((" " org-mode-line-string " "))))
 
@@ -269,100 +151,95 @@ typical word processor."
 (add-hook 'org-clock-out-hook 'sanityinc/hide-org-clock-from-header-line)
 (add-hook 'org-clock-cancel-hook 'sanityinc/hide-org-clock-from-header-line)
 
-(after-load 'org-clock
-  (define-key org-clock-mode-line-map [header-line mouse-2] 'org-clock-goto)
-  (define-key org-clock-mode-line-map [header-line mouse-1] 'org-clock-menu))
+(eval-after-load 'org-clock
+  '(progn
+     (define-key org-clock-mode-line-map [header-line mouse-2] 'org-clock-goto)
+     (define-key org-clock-mode-line-map [header-line mouse-1] 'org-clock-menu)))
 
+(eval-after-load 'org
+  '(progn
+     (setq org-imenu-depth 9)
+     (require 'org-clock)
+     ;; @see http://irreal.org/blog/1
+     (setq org-src-fontify-natively t)))
 
-
-(when (and *is-a-mac* (file-directory-p "/Applications/org-clock-statusbar.app"))
-  (add-hook 'org-clock-in-hook
-            (lambda () (call-process "/usr/bin/osascript" nil 0 nil "-e"
-                                (concat "tell application \"org-clock-statusbar\" to clock in \"" org-clock-current-task "\""))))
-  (add-hook 'org-clock-out-hook
-            (lambda () (call-process "/usr/bin/osascript" nil 0 nil "-e"
-                                "tell application \"org-clock-statusbar\" to clock out"))))
+(defun org-mode-hook-setup ()
+  (setq evil-auto-indent nil)
+  ;; org-mode's own flycheck will be loaded
+  (enable-flyspell-mode-conditionally)
 
+  ;; but I don't want to auto spell check when typing,
+  ;; please comment out `(flyspell-mode -1)` if you prefer auto spell check
+  (flyspell-mode -1)
 
-
-;; Remove empty LOGBOOK drawers on clock out
-(defun sanityinc/remove-empty-drawer-on-clock-out ()
-  (interactive)
-  (save-excursion
-    (beginning-of-line 0)
-    (org-remove-empty-drawer-at "LOGBOOK" (point))))
+  ;; for some reason, org8 disable odt export by default
+  (add-to-list 'org-export-backends 'odt)
+  ;; (add-to-list 'org-export-backends 'org) ; for org-mime
 
-(after-load 'org-clock
-  (add-hook 'org-clock-out-hook 'sanityinc/remove-empty-drawer-on-clock-out 'append))
+  ;; org-mime setup, run this command in org-file, than yank in `message-mode'
+  (local-set-key (kbd "C-c M-o") 'org-mime-org-buffer-htmlize)
 
+  ;; don't spell check double words
+  (setq flyspell-check-doublon nil)
 
+  ;; display wrapped lines instead of truncated lines
+  (setq truncate-lines nil)
+  (setq word-wrap t))
+(add-hook 'org-mode-hook 'org-mode-hook-setup)
 
-;; TODO: warn about inconsistent items, e.g. TODO inside non-PROJECT
-;; TODO: nested projects!
+(defadvice org-open-at-point (around org-open-at-point-choose-browser activate)
+  "`C-u M-x org-open-at-point` open link with `browse-url-generic-program'"
+  (let* ((browse-url-browser-function
+          (cond
+           ;; open with `browse-url-generic-program'
+           ((equal (ad-get-arg 0) '(4)) 'browse-url-generic)
+           ;; open with w3m
+           (t 'w3m-browse-url))))
+    ad-do-it))
 
+(defadvice org-publish (around org-publish-advice activate)
+  "Stop running major-mode hook when org-publish"
+  (let ((old load-user-customized-major-mode-hook))
+    (setq load-user-customized-major-mode-hook nil)
+    ad-do-it
+    (setq load-user-customized-major-mode-hook old)))
 
-
-;;; Archiving
+;; {{ org2nikola set up
+(setq org2nikola-output-root-directory "~/.config/nikola")
+(setq org2nikola-use-google-code-prettify t)
+(setq org2nikola-prettify-unsupported-language
+      '(elisp "lisp"
+              emacs-lisp "lisp"))
+;; }}
 
-(setq org-archive-mark-done nil)
-(setq org-archive-location "%s_archive::* Archive")
+(defun org-demote-or-promote (&optional is-promote)
+  (interactive "P")
+  (unless (region-active-p)
+    (org-mark-subtree))
+  (if is-promote (org-do-promote)
+    (org-do-demote)))
 
+;; {{ @see http://orgmode.org/worg/org-contrib/org-mime.html
+(defun org-mime-html-hook-setup ()
+  (org-mime-change-element-style "pre"
+                                 "color:#E6E1DC; background-color:#232323; padding:0.5em;")
+  (org-mime-change-element-style "blockquote"
+                                 "border-left: 2px solid gray; padding-left: 4px;"))
 
+(eval-after-load 'org-mime
+  '(progn
+     (setq org-mime-export-options '(:section-numbers nil :with-author nil :with-toc nil))
+     (add-hook 'org-mime-html-hook 'org-mime-html-hook-setup)))
 
-
+;; demo video: http://vimeo.com/album/1970594/video/13158054
+(add-hook 'message-mode-hook
+          (lambda ()
+            (local-set-key (kbd "C-c M-o") 'org-mime-htmlize)))
+;; }}
 
-(require-package 'org-pomodoro)
-(setq org-pomodoro-keep-killed-pomodoro-time t)
-(after-load 'org-agenda
-  (define-key org-agenda-mode-map (kbd "P") 'org-pomodoro))
-
-
-;; ;; Show iCal calendars in the org agenda
-;; (when (and *is-a-mac* (require 'org-mac-iCal nil t))
-;;   (setq org-agenda-include-diary t
-;;         org-agenda-custom-commands
-;;         '(("I" "Import diary from iCal" agenda ""
-;;            ((org-agenda-mode-hook #'org-mac-iCal)))))
-
-;;   (add-hook 'org-agenda-cleanup-fancy-diary-hook
-;;             (lambda ()
-;;               (goto-char (point-min))
-;;               (save-excursion
-;;                 (while (re-search-forward "^[a-z]" nil t)
-;;                   (goto-char (match-beginning 0))
-;;                   (insert "0:00-24:00 ")))
-;;               (while (re-search-forward "^ [a-z]" nil t)
-;;                 (goto-char (match-beginning 0))
-;;                 (save-excursion
-;;                   (re-search-backward "^[0-9]+:[0-9]+-[0-9]+:[0-9]+ " nil t))
-;;                 (insert (match-string 0))))))
-
-
-(after-load 'org
-  (define-key org-mode-map (kbd "C-M-<up>") 'org-up-element)
-  (when *is-a-mac*
-    (define-key org-mode-map (kbd "M-h") nil)
-    (define-key org-mode-map (kbd "C-c g") 'org-mac-grab-link)))
-
-(after-load 'org
-  (org-babel-do-load-languages
-   'org-babel-load-languages
-   `((R . t)
-     (ditaa . t)
-     (dot . t)
-     (emacs-lisp . t)
-     (gnuplot . t)
-     (haskell . nil)
-     (latex . t)
-     (ledger . t)
-     (ocaml . nil)
-     (octave . t)
-     (python . t)
-     (ruby . t)
-     (screen . nil)
-     (,(if (locate-library "ob-sh") 'sh 'shell) . t)
-     (sql . nil)
-     (sqlite . t))))
-
+(defun org-agenda-show-agenda-and-todo (&optional arg)
+  "Better org-mode agenda view."
+  (interactive "P")
+  (org-agenda arg "n"))
 
 (provide 'init-org)

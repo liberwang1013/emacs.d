@@ -1,24 +1,34 @@
-;;; Character sets
+(require 'cl)
 
 
-;;; Changing font sizes
+(defun font-name-replace-size (font-name new-size)
+  (let ((parts (split-string font-name "-")))
+    (setcar (nthcdr 7 parts) (format "%d" new-size))
+    (mapconcat 'identity parts "-")))
 
-(require-package 'default-text-scale)
-(global-set-key (kbd "C-M-=") 'default-text-scale-increase)
-(global-set-key (kbd "C-M--") 'default-text-scale-decrease)
+(defun increment-default-font-height (delta)
+  "Adjust the default font height by DELTA on every frame.
+The pixel size of the frame is kept (approximately) the same.
+DELTA should be a multiple of 10, in the units used by the
+:height face attribute."
+  (let* ((new-height (+ (face-attribute 'default :height) delta))
+         (new-point-height (/ new-height 10)))
+    (dolist (f (frame-list))
+      (with-selected-frame f
+        ;; Latest 'set-frame-font supports a "frames" arg, but
+        ;; we cater to Emacs 23 by looping instead.
+        (set-frame-font (font-name-replace-size (face-font 'default)
+                                                new-point-height)
+                        t)))
+    (set-face-attribute 'default nil :height new-height)
+    (message "default font size is now %d" new-point-height)))
 
+(defun increase-default-font-height ()
+  (interactive)
+  (increment-default-font-height 10))
 
-(defun sanityinc/maybe-adjust-visual-fill-column ()
-  "Readjust visual fill column when the global font size is modified.
-This is helpful for writeroom-mode, in particular."
-  ;; TODO: submit as patch
-  (if visual-fill-column-mode
-      (add-hook 'after-setting-font-hook 'visual-fill-column--adjust-window nil t)
-    (remove-hook 'after-setting-font-hook 'visual-fill-column--adjust-window t)))
-
-(add-hook 'visual-fill-column-mode-hook
-          'sanityinc/maybe-adjust-visual-fill-column)
-
-
+(defun decrease-default-font-height ()
+  (interactive)
+  (increment-default-font-height -10))
 
 (provide 'init-fonts)
